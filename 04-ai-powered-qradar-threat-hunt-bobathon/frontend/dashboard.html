@@ -1,0 +1,1036 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Threat Hunt Pilot - Analyst Dashboard</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
+    <style>
+        :root {
+            --bg-primary: #ffffff;
+            --bg-secondary: #f5f5f5;
+            --bg-tertiary: #e8e8e8;
+            --text-primary: #1a1a1a;
+            --text-secondary: #666666;
+            --border-color: #d0d0d0;
+            --accent-primary: #0066cc;
+            --accent-hover: #0052a3;
+            --success: #28a745;
+            --warning: #ffc107;
+            --danger: #dc3545;
+            --info: #17a2b8;
+            
+            /* MITRE Tactic Colors */
+            --execution: #9b59b6;
+            --lateral-movement: #f39c12;
+            --credential-access: #e74c3c;
+            --defense-evasion: #ff7f50;
+            --persistence: #20c997;
+            --impact: #ff69b4;
+            --host-node: #95a5a6;
+            
+            /* Severity Colors */
+            --critical: #8b0000;
+            --high: #dc3545;
+            --medium: #ffc107;
+            --low: #6c757d;
+        }
+        
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --bg-primary: #1a1a1a;
+                --bg-secondary: #2d2d2d;
+                --bg-tertiary: #3a3a3a;
+                --text-primary: #e8e8e8;
+                --text-secondary: #b0b0b0;
+                --border-color: #4a4a4a;
+                --accent-primary: #4da6ff;
+                --accent-hover: #66b3ff;
+            }
+        }
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            line-height: 1.6;
+        }
+        
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        
+        header {
+            background: var(--bg-secondary);
+            border-bottom: 2px solid var(--border-color);
+            padding: 20px 0;
+            margin-bottom: 30px;
+        }
+        
+        h1 {
+            font-size: 28px;
+            font-weight: 600;
+            margin-bottom: 5px;
+        }
+        
+        .subtitle {
+            color: var(--text-secondary);
+            font-size: 14px;
+        }
+        
+        .hunt-form {
+            background: var(--bg-secondary);
+            padding: 25px;
+            border-radius: 8px;
+            margin-bottom: 30px;
+            border: 1px solid var(--border-color);
+        }
+        
+        .form-group {
+            margin-bottom: 15px;
+        }
+        
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: 500;
+            font-size: 14px;
+        }
+        
+        textarea, input[type="number"] {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            font-size: 14px;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            font-family: inherit;
+        }
+        
+        textarea {
+            resize: vertical;
+            min-height: 80px;
+        }
+        
+        .form-row {
+            display: flex;
+            gap: 15px;
+            align-items: flex-end;
+        }
+        
+        .form-row .form-group {
+            flex: 1;
+        }
+        
+        .form-row .form-group:last-child {
+            flex: 0 0 auto;
+        }
+        
+        button {
+            background: var(--accent-primary);
+            color: white;
+            border: none;
+            padding: 12px 30px;
+            border-radius: 4px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        
+        button:hover:not(:disabled) {
+            background: var(--accent-hover);
+        }
+        
+        button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+        
+        .loading {
+            display: none;
+            text-align: center;
+            padding: 40px;
+            color: var(--text-secondary);
+        }
+        
+        .loading.active {
+            display: block;
+        }
+        
+        .spinner {
+            border: 3px solid var(--border-color);
+            border-top: 3px solid var(--accent-primary);
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 15px;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .error {
+            background: #fee;
+            border: 1px solid var(--danger);
+            color: #c00;
+            padding: 15px;
+            border-radius: 4px;
+            margin-bottom: 20px;
+            display: none;
+        }
+        
+        .error.active {
+            display: block;
+        }
+        
+        .results {
+            display: none;
+        }
+        
+        .results.active {
+            display: block;
+        }
+        
+        .results-header {
+            background: var(--bg-secondary);
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            border: 1px solid var(--border-color);
+        }
+        
+        .results-stats {
+            display: flex;
+            gap: 30px;
+            flex-wrap: wrap;
+        }
+        
+        .stat {
+            flex: 1;
+            min-width: 150px;
+        }
+        
+        .stat-label {
+            font-size: 12px;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        
+        .stat-value {
+            font-size: 28px;
+            font-weight: 600;
+            margin-top: 5px;
+        }
+        
+        .tabs {
+            display: flex;
+            gap: 5px;
+            border-bottom: 2px solid var(--border-color);
+            margin-bottom: 20px;
+        }
+        
+        .tab {
+            padding: 12px 24px;
+            background: transparent;
+            border: none;
+            border-bottom: 3px solid transparent;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            color: var(--text-secondary);
+            transition: all 0.2s;
+        }
+        
+        .tab:hover {
+            color: var(--text-primary);
+            background: var(--bg-secondary);
+        }
+        
+        .tab.active {
+            color: var(--accent-primary);
+            border-bottom-color: var(--accent-primary);
+        }
+        
+        .tab-content {
+            display: none;
+        }
+        
+        .tab-content.active {
+            display: block;
+        }
+        
+        .search-box {
+            margin-bottom: 15px;
+        }
+        
+        .search-box input {
+            width: 100%;
+            max-width: 400px;
+            padding: 8px 12px;
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            background: var(--bg-secondary);
+            border-radius: 8px;
+            overflow: hidden;
+        }
+        
+        th {
+            background: var(--bg-tertiary);
+            padding: 12px;
+            text-align: left;
+            font-weight: 600;
+            font-size: 13px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            border-bottom: 2px solid var(--border-color);
+        }
+        
+        td {
+            padding: 12px;
+            border-bottom: 1px solid var(--border-color);
+            font-size: 14px;
+        }
+        
+        tr:last-child td {
+            border-bottom: none;
+        }
+        
+        tr:hover {
+            background: var(--bg-tertiary);
+        }
+        
+        .badge {
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        
+        .badge-critical {
+            background: var(--critical);
+            color: white;
+        }
+        
+        .badge-high {
+            background: var(--high);
+            color: white;
+        }
+        
+        .badge-medium {
+            background: var(--medium);
+            color: #000;
+        }
+        
+        .badge-low {
+            background: var(--low);
+            color: white;
+        }
+        
+        .pagination {
+            display: flex;
+            justify-content: center;
+            gap: 10px;
+            margin-top: 20px;
+        }
+        
+        .pagination button {
+            padding: 8px 16px;
+            font-size: 13px;
+        }
+        
+        .code {
+            background: var(--bg-tertiary);
+            padding: 10px;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            overflow-x: auto;
+            margin: 10px 0;
+        }
+        
+        #graph-container {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            height: 600px;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .graph-sidebar {
+            position: absolute;
+            right: 0;
+            top: 0;
+            bottom: 0;
+            width: 300px;
+            background: var(--bg-primary);
+            border-left: 1px solid var(--border-color);
+            padding: 20px;
+            overflow-y: auto;
+            transform: translateX(100%);
+            transition: transform 0.3s;
+        }
+        
+        .graph-sidebar.active {
+            transform: translateX(0);
+        }
+        
+        .graph-sidebar h3 {
+            margin-bottom: 15px;
+            font-size: 18px;
+        }
+        
+        .graph-sidebar .detail-row {
+            margin-bottom: 12px;
+        }
+        
+        .graph-sidebar .detail-label {
+            font-size: 12px;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        
+        .graph-sidebar .detail-value {
+            font-size: 14px;
+            margin-top: 3px;
+        }
+        
+        .graph-legend {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            background: var(--bg-primary);
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            padding: 15px;
+            font-size: 12px;
+        }
+        
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 8px;
+        }
+        
+        .legend-item:last-child {
+            margin-bottom: 0;
+        }
+        
+        .legend-color {
+            width: 16px;
+            height: 16px;
+            border-radius: 3px;
+        }
+        
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: var(--text-secondary);
+        }
+        
+        .empty-state-icon {
+            font-size: 48px;
+            margin-bottom: 15px;
+            opacity: 0.5;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <div class="container">
+            <h1>🔍 AI Threat Hunt Pilot</h1>
+            <p class="subtitle">Natural language threat hunting powered by IBM QRadar + watsonx.ai</p>
+        </div>
+    </header>
+    
+    <div class="container">
+        <div class="hunt-form">
+            <div class="form-group">
+                <label for="query">Threat Hunting Hypothesis</label>
+                <textarea 
+                    id="query" 
+                    placeholder="e.g., Find suspicious PowerShell lateral movement in last 7 days"
+                    rows="3"
+                ></textarea>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="days">Look-back Window (days)</label>
+                    <input type="number" id="days" value="7" min="1" max="90">
+                </div>
+                <div class="form-group">
+                    <button id="hunt-btn" onclick="runHunt()">🚀 Start Hunt</button>
+                </div>
+            </div>
+        </div>
+        
+        <div class="error" id="error"></div>
+        
+        <div class="loading" id="loading">
+            <div class="spinner"></div>
+            <p>Analyzing threat patterns...</p>
+        </div>
+        
+        <div class="results" id="results">
+            <div class="results-header">
+                <div class="results-stats">
+                    <div class="stat">
+                        <div class="stat-label">Total Events</div>
+                        <div class="stat-value" id="stat-events">0</div>
+                    </div>
+                    <div class="stat">
+                        <div class="stat-label">Anomalies</div>
+                        <div class="stat-value" id="stat-anomalies">0</div>
+                    </div>
+                    <div class="stat">
+                        <div class="stat-label">Techniques</div>
+                        <div class="stat-value" id="stat-techniques">0</div>
+                    </div>
+                    <div class="stat">
+                        <div class="stat-label">Affected Hosts</div>
+                        <div class="stat-value" id="stat-hosts">0</div>
+                    </div>
+                </div>
+                <div class="code" id="aql-query"></div>
+            </div>
+            
+            <div class="tabs">
+                <button class="tab active" onclick="switchTab('chain')">Attack Chain</button>
+                <button class="tab" onclick="switchTab('anomalies')">Anomalies</button>
+                <button class="tab" onclick="switchTab('events')">Events</button>
+            </div>
+            
+            <div id="tab-chain" class="tab-content active">
+                <div id="graph-container">
+                    <svg id="graph-svg"></svg>
+                    <div class="graph-legend">
+                        <div class="legend-item">
+                            <div class="legend-color" style="background: var(--host-node); border-radius: 50%;"></div>
+                            <span>Host</span>
+                        </div>
+                        <div class="legend-item">
+                            <div class="legend-color" style="background: var(--execution);"></div>
+                            <span>Execution</span>
+                        </div>
+                        <div class="legend-item">
+                            <div class="legend-color" style="background: var(--lateral-movement);"></div>
+                            <span>Lateral Movement</span>
+                        </div>
+                        <div class="legend-item">
+                            <div class="legend-color" style="background: var(--credential-access);"></div>
+                            <span>Credential Access</span>
+                        </div>
+                        <div class="legend-item">
+                            <div class="legend-color" style="background: var(--defense-evasion);"></div>
+                            <span>Defense Evasion</span>
+                        </div>
+                        <div class="legend-item">
+                            <div class="legend-color" style="background: var(--persistence);"></div>
+                            <span>Persistence</span>
+                        </div>
+                        <div class="legend-item">
+                            <div class="legend-color" style="background: var(--impact);"></div>
+                            <span>Impact</span>
+                        </div>
+                    </div>
+                    <div class="graph-sidebar" id="graph-sidebar">
+                        <h3>Technique Details</h3>
+                        <div id="sidebar-content"></div>
+                    </div>
+                </div>
+            </div>
+            
+            <div id="tab-anomalies" class="tab-content">
+                <div class="search-box">
+                    <input type="text" id="anomaly-search" placeholder="Search anomalies..." onkeyup="filterAnomalies()">
+                </div>
+                <div id="anomalies-table"></div>
+            </div>
+            
+            <div id="tab-events" class="tab-content">
+                <div class="search-box">
+                    <input type="text" id="event-search" placeholder="Search events..." onkeyup="filterEvents()">
+                </div>
+                <div id="events-table"></div>
+                <div class="pagination" id="events-pagination"></div>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        let huntData = null;
+        let currentPage = 1;
+        const eventsPerPage = 20;
+        
+        const tacticColors = {
+            'Execution': 'var(--execution)',
+            'Lateral Movement': 'var(--lateral-movement)',
+            'Credential Access': 'var(--credential-access)',
+            'Defense Evasion': 'var(--defense-evasion)',
+            'Persistence': 'var(--persistence)',
+            'Impact': 'var(--impact)',
+        };
+        
+        async function runHunt() {
+            const query = document.getElementById('query').value.trim();
+            const days = parseInt(document.getElementById('days').value);
+            
+            if (!query) {
+                showError('Please enter a threat hunting hypothesis');
+                return;
+            }
+            
+            hideError();
+            showLoading();
+            hideResults();
+            
+            try {
+                const response = await fetch('http://localhost:8000/hunt', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        query_text: query,
+                        days: days
+                    })
+                });
+                
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.detail || 'Hunt failed');
+                }
+                
+                huntData = await response.json();
+                displayResults();
+            } catch (error) {
+                showError(error.message);
+            } finally {
+                hideLoading();
+            }
+        }
+        
+        function displayResults() {
+            // Update stats
+            document.getElementById('stat-events').textContent = huntData.total_events;
+            document.getElementById('stat-anomalies').textContent = huntData.anomalies.length;
+            document.getElementById('stat-techniques').textContent = huntData.attack_chain.techniques_summary.length;
+            document.getElementById('stat-hosts').textContent = huntData.attack_chain.affected_hosts.length;
+            
+            // Display AQL query
+            document.getElementById('aql-query').textContent = huntData.aql_query;
+            
+            // Render tabs
+            renderAttackChain();
+            renderAnomalies();
+            renderEvents();
+            
+            showResults();
+        }
+        
+        function renderAttackChain() {
+            const container = document.getElementById('graph-container');
+            const svg = d3.select('#graph-svg');
+            svg.selectAll('*').remove();
+            
+            if (!huntData.attack_chain.steps || huntData.attack_chain.steps.length === 0) {
+                svg.append('text')
+                    .attr('x', container.clientWidth / 2)
+                    .attr('y', container.clientHeight / 2)
+                    .attr('text-anchor', 'middle')
+                    .attr('fill', 'var(--text-secondary)')
+                    .text('No attack chain detected');
+                return;
+            }
+            
+            const width = container.clientWidth;
+            const height = container.clientHeight;
+            
+            svg.attr('width', width).attr('height', height);
+            
+            // Build graph data
+            const nodes = [];
+            const links = [];
+            const nodeMap = new Map();
+            
+            // Add host nodes
+            huntData.attack_chain.affected_hosts.forEach(host => {
+                const node = {
+                    id: host,
+                    type: 'host',
+                    label: host
+                };
+                nodes.push(node);
+                nodeMap.set(host, node);
+            });
+            
+            // Add technique nodes and links
+            huntData.attack_chain.steps.forEach(step => {
+                step.techniques.forEach(tech => {
+                    const techNode = {
+                        id: tech.technique_id,
+                        type: 'technique',
+                        label: tech.technique_name,
+                        tactic: tech.tactic,
+                        technique_id: tech.technique_id,
+                        description: tech.description,
+                        evidence: tech.evidence_events
+                    };
+                    nodes.push(techNode);
+                    nodeMap.set(tech.technique_id, techNode);
+                    
+                    // Link techniques to hosts
+                    tech.evidence_events.forEach(host => {
+                        if (nodeMap.has(host)) {
+                            links.push({
+                                source: host,
+                                target: tech.technique_id
+                            });
+                        }
+                    });
+                });
+                
+                // Link source to dest hosts
+                step.source_hosts.forEach(src => {
+                    step.dest_hosts.forEach(dest => {
+                        if (src !== dest && nodeMap.has(src) && nodeMap.has(dest)) {
+                            links.push({
+                                source: src,
+                                target: dest
+                            });
+                        }
+                    });
+                });
+            });
+            
+            // Create force simulation
+            const simulation = d3.forceSimulation(nodes)
+                .force('link', d3.forceLink(links).id(d => d.id).distance(100))
+                .force('charge', d3.forceManyBody().strength(-300))
+                .force('center', d3.forceCenter(width / 2, height / 2))
+                .force('collision', d3.forceCollide().radius(40));
+            
+            // Draw links
+            const link = svg.append('g')
+                .selectAll('line')
+                .data(links)
+                .join('line')
+                .attr('stroke', 'var(--border-color)')
+                .attr('stroke-width', 2)
+                .attr('stroke-opacity', 0.6);
+            
+            // Draw nodes
+            const node = svg.append('g')
+                .selectAll('g')
+                .data(nodes)
+                .join('g')
+                .call(d3.drag()
+                    .on('start', dragstarted)
+                    .on('drag', dragged)
+                    .on('end', dragended));
+            
+            // Add shapes
+            node.each(function(d) {
+                const g = d3.select(this);
+                if (d.type === 'host') {
+                    g.append('circle')
+                        .attr('r', 20)
+                        .attr('fill', 'var(--host-node)')
+                        .attr('stroke', 'var(--border-color)')
+                        .attr('stroke-width', 2);
+                } else {
+                    g.append('rect')
+                        .attr('width', 80)
+                        .attr('height', 40)
+                        .attr('x', -40)
+                        .attr('y', -20)
+                        .attr('rx', 5)
+                        .attr('fill', tacticColors[d.tactic] || 'var(--text-secondary)')
+                        .attr('stroke', 'var(--border-color)')
+                        .attr('stroke-width', 2);
+                }
+            });
+            
+            // Add labels
+            node.append('text')
+                .text(d => d.type === 'host' ? d.label.split('.')[0] : d.technique_id)
+                .attr('text-anchor', 'middle')
+                .attr('dy', d => d.type === 'host' ? 4 : 5)
+                .attr('fill', d => d.type === 'host' ? 'white' : 'white')
+                .attr('font-size', '11px')
+                .attr('font-weight', 'bold')
+                .attr('pointer-events', 'none');
+            
+            // Click handler for techniques
+            node.on('click', function(event, d) {
+                if (d.type === 'technique') {
+                    showTechniqueDetails(d);
+                }
+            });
+            
+            // Update positions
+            simulation.on('tick', () => {
+                link
+                    .attr('x1', d => d.source.x)
+                    .attr('y1', d => d.source.y)
+                    .attr('x2', d => d.target.x)
+                    .attr('y2', d => d.target.y);
+                
+                node.attr('transform', d => `translate(${d.x},${d.y})`);
+            });
+            
+            function dragstarted(event, d) {
+                if (!event.active) simulation.alphaTarget(0.3).restart();
+                d.fx = d.x;
+                d.fy = d.y;
+            }
+            
+            function dragged(event, d) {
+                d.fx = event.x;
+                d.fy = event.y;
+            }
+            
+            function dragended(event, d) {
+                if (!event.active) simulation.alphaTarget(0);
+                d.fx = null;
+                d.fy = null;
+            }
+        }
+        
+        function showTechniqueDetails(technique) {
+            const sidebar = document.getElementById('graph-sidebar');
+            const content = document.getElementById('sidebar-content');
+            
+            content.innerHTML = `
+                <div class="detail-row">
+                    <div class="detail-label">Technique ID</div>
+                    <div class="detail-value">${technique.technique_id}</div>
+                </div>
+                <div class="detail-row">
+                    <div class="detail-label">Name</div>
+                    <div class="detail-value">${technique.label}</div>
+                </div>
+                <div class="detail-row">
+                    <div class="detail-label">Tactic</div>
+                    <div class="detail-value">${technique.tactic}</div>
+                </div>
+                <div class="detail-row">
+                    <div class="detail-label">Description</div>
+                    <div class="detail-value">${technique.description}</div>
+                </div>
+                <div class="detail-row">
+                    <div class="detail-label">Evidence Hosts</div>
+                    <div class="detail-value">${technique.evidence.join(', ') || 'None'}</div>
+                </div>
+            `;
+            
+            sidebar.classList.add('active');
+        }
+        
+        function renderAnomalies() {
+            const container = document.getElementById('anomalies-table');
+            
+            if (huntData.anomalies.length === 0) {
+                container.innerHTML = '<div class="empty-state"><div class="empty-state-icon">✓</div><p>No anomalies detected</p></div>';
+                return;
+            }
+            
+            // Sort by severity
+            const severityOrder = { critical: 0, high: 1, medium: 2, low: 3 };
+            const sorted = [...huntData.anomalies].sort((a, b) => 
+                severityOrder[a.severity] - severityOrder[b.severity]
+            );
+            
+            let html = '<table><thead><tr><th>Severity</th><th>Reason</th><th>Username</th><th>Host</th><th>Process</th><th>Z-Score</th></tr></thead><tbody>';
+            
+            sorted.forEach(anomaly => {
+                html += `
+                    <tr class="anomaly-row">
+                        <td><span class="badge badge-${anomaly.severity}">${anomaly.severity}</span></td>
+                        <td>${anomaly.reason}</td>
+                        <td>${anomaly.event.username || '-'}</td>
+                        <td>${anomaly.event.hostname || '-'}</td>
+                        <td>${anomaly.event.process_name || '-'}</td>
+                        <td>${anomaly.zscore ? anomaly.zscore.toFixed(2) : '-'}</td>
+                    </tr>
+                `;
+            });
+            
+            html += '</tbody></table>';
+            container.innerHTML = html;
+        }
+        
+        function renderEvents() {
+            currentPage = 1;
+            displayEventsPage();
+        }
+        
+        function displayEventsPage() {
+            const container = document.getElementById('events-table');
+            const events = huntData.events;
+            
+            if (events.length === 0) {
+                container.innerHTML = '<div class="empty-state"><div class="empty-state-icon">📭</div><p>No events found</p></div>';
+                return;
+            }
+            
+            const start = (currentPage - 1) * eventsPerPage;
+            const end = start + eventsPerPage;
+            const pageEvents = events.slice(start, end);
+            
+            let html = '<table><thead><tr><th>Event</th><th>Username</th><th>Source IP</th><th>Dest IP</th><th>Hostname</th><th>Time</th></tr></thead><tbody>';
+            
+            pageEvents.forEach(event => {
+                html += `
+                    <tr>
+                        <td>${event.event_name || event['QIDNAME(qid)'] || '-'}</td>
+                        <td>${event.username || '-'}</td>
+                        <td>${event.sourceip || '-'}</td>
+                        <td>${event.destinationip || '-'}</td>
+                        <td>${event.hostname || '-'}</td>
+                        <td>${event.devicetime || '-'}</td>
+                    </tr>
+                `;
+            });
+            
+            html += '</tbody></table>';
+            container.innerHTML = html;
+            
+            renderPagination();
+        }
+        
+        function renderPagination() {
+            const container = document.getElementById('events-pagination');
+            const totalPages = Math.ceil(huntData.events.length / eventsPerPage);
+            
+            if (totalPages <= 1) {
+                container.innerHTML = '';
+                return;
+            }
+            
+            let html = '';
+            if (currentPage > 1) {
+                html += '<button onclick="changePage(-1)">← Previous</button>';
+            }
+            html += `<span style="padding: 8px 16px;">Page ${currentPage} of ${totalPages}</span>`;
+            if (currentPage < totalPages) {
+                html += '<button onclick="changePage(1)">Next →</button>';
+            }
+            
+            container.innerHTML = html;
+        }
+        
+        function changePage(delta) {
+            currentPage += delta;
+            displayEventsPage();
+        }
+        
+        function filterAnomalies() {
+            const search = document.getElementById('anomaly-search').value.toLowerCase();
+            const rows = document.querySelectorAll('#anomalies-table .anomaly-row');
+            
+            rows.forEach(row => {
+                const text = row.textContent.toLowerCase();
+                row.style.display = text.includes(search) ? '' : 'none';
+            });
+        }
+        
+        function filterEvents() {
+            const search = document.getElementById('event-search').value.toLowerCase();
+            if (!huntData) return;
+            
+            if (search === '') {
+                renderEvents();
+                return;
+            }
+            
+            const filtered = huntData.events.filter(event => {
+                const text = JSON.stringify(event).toLowerCase();
+                return text.includes(search);
+            });
+            
+            const temp = huntData.events;
+            huntData.events = filtered;
+            renderEvents();
+            huntData.events = temp;
+        }
+        
+        function switchTab(tab) {
+            // Update tab buttons
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            event.target.classList.add('active');
+            
+            // Update tab content
+            document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+            document.getElementById(`tab-${tab}`).classList.add('active');
+            
+            // Close sidebar when switching tabs
+            document.getElementById('graph-sidebar').classList.remove('active');
+        }
+        
+        function showLoading() {
+            document.getElementById('loading').classList.add('active');
+            document.getElementById('hunt-btn').disabled = true;
+        }
+        
+        function hideLoading() {
+            document.getElementById('loading').classList.remove('active');
+            document.getElementById('hunt-btn').disabled = false;
+        }
+        
+        function showResults() {
+            document.getElementById('results').classList.add('active');
+        }
+        
+        function hideResults() {
+            document.getElementById('results').classList.remove('active');
+        }
+        
+        function showError(message) {
+            const error = document.getElementById('error');
+            error.textContent = message;
+            error.classList.add('active');
+        }
+        
+        function hideError() {
+            document.getElementById('error').classList.remove('active');
+        }
+        
+        // Close sidebar when clicking outside
+        document.addEventListener('click', (e) => {
+            const sidebar = document.getElementById('graph-sidebar');
+            if (sidebar.classList.contains('active') && 
+                !sidebar.contains(e.target) && 
+                !e.target.closest('g')) {
+                sidebar.classList.remove('active');
+            }
+        });
+    </script>
+</body>
+</html>
