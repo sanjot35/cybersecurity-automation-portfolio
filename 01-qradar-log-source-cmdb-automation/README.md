@@ -13,5 +13,3 @@ QRadar REST API usage, pagination, filtering, Excel reporting, hostname/IP match
 ## Setup / configuration
 Update the QRadar base URL and provide a valid SEC token using a secure configuration method before running. Use a test environment and authorized API permissions.
 
-## Important
-These are portfolio copies of scripts I authored. Before public release, review the code and ensure it is approved for sharing. Use secure TLS certificate validation; do not disable certificate verification. Do not upload real CMDBs, hostnames, IPs, QRadar exports, or client-specific configuration.
